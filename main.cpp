@@ -66,7 +66,6 @@ GLuint gVbo;
 FT_Library gFtLib;
 FT_Face gFtFace;
 GLuint gProgramId;
-GLint gAttributeCoordLoc;       // attribute location within program
 GLint gUniformTextTextureLoc;   // uniform location within program
 GLint gUniformTextColorLoc;     // uniform location within program
 
@@ -229,70 +228,6 @@ GLuint CreateProgram()
 void RenderText(const char loadThisChar, const float x, const float y, const float userScaleX,
     const float userScaleY)
 {
-
-    //FT_GlyphSlot g = gFtFace->glyph;
-
-    ///* Create a texture that will be used to hold one "glyph" */
-    //GLuint tex;
-
-    //glActiveTexture(GL_TEXTURE0);
-    //glGenTextures(1, &tex);
-    //glBindTexture(GL_TEXTURE_2D, tex);
-    //glUniform1i(gUniformTextTextureLoc, 0);
-
-    ///* We require 1 byte alignment when uploading texture data */
-    //glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-
-    ///* Clamping to edges is important to prevent artifacts when scaling */
-    //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-    ///* Linear filtering usually looks best for text */
-    //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-    ///* Set up the VBO for our vertex data */
-    //glEnableVertexAttribArray(gAttributeCoordLoc);
-    //glBindBuffer(GL_ARRAY_BUFFER, gVbo);
-    //glVertexAttribPointer(gAttributeCoordLoc, 4, GL_FLOAT, GL_FALSE, 0, 0);
-
-    ///* Try to load and render the character */
-    //if (FT_Load_Char(gFtFace, loadThisChar, FT_LOAD_RENDER))
-    //    return;
-
-    ///* Upload the "bitmap", which contains an 8-bit grayscale image, as an alpha texture */
-    //glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, g->bitmap.width, g->bitmap.rows, 0, GL_ALPHA, GL_UNSIGNED_BYTE, g->bitmap.buffer);
-
-    ///* Calculate the vertex and texture coordinates */
-    //float x2 = x + g->bitmap_left * scaleX;
-    //float y2 = -y - g->bitmap_top * scaleY;
-    //float w = g->bitmap.width * scaleX;
-    //float h = g->bitmap.rows * scaleY;
-
-    //float left = x2;
-    //float right = x2 + w;
-    //float bottom = -y2;
-    //float top = -y2 - h;
-    //point box[4] = {
-    //    { x2, -y2, 0, 0 },
-    //    { x2 + w, -y2, 1, 0 },
-    //    { x2, -y2 - h, 0, 1 },
-    //    { x2 + w, -y2 - h, 1, 1 },
-    //};
-    ////point box[4] = {
-    ////    { left, bottom, 0, 0 },
-    ////    { right, bottom, 1, 0 },
-    ////    { left, top, 0, 1 },
-    ////    { right, top, 1, 1 },
-    ////};
-
-    ///* Draw the character on the screen */
-    //glBufferData(GL_ARRAY_BUFFER, sizeof box, box, GL_DYNAMIC_DRAW);
-    //glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-
-    //glDisableVertexAttribArray(gAttributeCoordLoc);
-    //glDeleteTextures(1, &tex);
-
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
@@ -386,24 +321,6 @@ void RenderText(const char loadThisChar, const float x, const float y, const flo
             providedFormat, providedFormatDataType, glyph->bitmap.buffer);
 
         // so now a texture is loaded, but where to draw it?
-        // ??what is being accounted for by scaling the bitmap's left and top and width and rows??
-
-        //float x2 = x + glyph->bitmap_left * scaleX;
-        //float y2 = -y - glyph->bitmap_top * scaleY;
-        //float w = glyph->bitmap.width * scaleX;
-        //float h = glyph->bitmap.rows * scaleY;
-
-        //float left = x2;
-        //float right = x2 + w;
-        //float bottom = -y2;
-        //float top = -y2 - h;
-        //point box[4] = {
-        //    {left, bottom, 0, 0},
-        //    {right, bottom, 1, 0},
-        //    {left, top, 0, 1},
-        //    {right, top, 1, 1},
-        //};
-
 
         // X screen coordinates are on the range [-1,+1]
         float oneOverScreenPixelWidth = 2.0f / glutGet(GLUT_WINDOW_WIDTH);
@@ -469,18 +386,42 @@ void RenderText(const char loadThisChar, const float x, const float y, const flo
 
         // set up (??not create??) the vertex buffer that will hold screen coordinates and texture 
         // coordinates
-        glEnableVertexAttribArray(gAttributeCoordLoc);  // ??why make a location double as a value?? it's confusing, but at least it has a value
         GLuint vboId;
         glGenBuffers(1, &vboId);
         glBindBuffer(GL_ARRAY_BUFFER, vboId);
         glBufferData(GL_ARRAY_BUFFER, sizeof(box), box, GL_DYNAMIC_DRAW);
 
-        // must be done AFTER binding the buffer or the program WILL crash
-        GLint itemsPerVetex = 4;
-        GLint bytesPerVertex = 16;  // 4 floats per => 16 bytes
-        GLint bufferStartByteOffset = 0;    // this is cast as a pointer due to OpenGL legacy stuff
-        glVertexAttribPointer(gAttributeCoordLoc, itemsPerVetex, GL_FLOAT, GL_FALSE,
-            bytesPerVertex, (void *)bufferStartByteOffset);
+        // tell OpenGL how the "box" data above is organized
+        // Note: This must be done AFTER binding the buffer or the program WILL crash.
+
+        // 2 floats per screen coord, 2 floats per texture coord, so 1 variable will do
+        GLint itemsPerVertexAttrib = 2;
+        
+        // how many bytes to "jump" until the next instance of the attribute
+        GLint bytesPerVertex = 4 * sizeof(float);  
+        
+        // this is cast as a pointer due to OpenGL legacy stuff
+        GLint bufferStartByteOffset = 0;    
+
+        // shorthand for "vertex attribute index"
+        GLint vai = 0;  
+        
+        // screen coordinates first
+        // Note: 2 floats starting 0 bytes from set start.
+        glEnableVertexAttribArray(vai);
+        glVertexAttribPointer(vai, itemsPerVertexAttrib, GL_FLOAT, GL_FALSE, bytesPerVertex,
+            (void *)bufferStartByteOffset);
+
+        // texture coordinates second
+        // Note: My approach (a common one) is to use the same kind and number of items for each
+        // vertex attribute, so this array's settings are nearly identical to the screen 
+        // coordinate's, the only difference being an offset (screen coordinate bytes first, then
+        // texture coordinate byte; see the box).
+        vai++;
+        bufferStartByteOffset += itemsPerVertexAttrib * sizeof(float);
+        glEnableVertexAttribArray(vai);
+        glVertexAttribPointer(vai, itemsPerVertexAttrib, GL_FLOAT, GL_FALSE, bytesPerVertex,
+            (void *)bufferStartByteOffset);
 
         // all that so that this one function call will work
         // Note: Start at vertex 0 (that is, start at element 0 in the GL_ARRAY_BUFFER) and draw 4 of them. 
@@ -497,7 +438,8 @@ void RenderText(const char loadThisChar, const float x, const float y, const flo
     glBindTexture(GL_TEXTURE_2D, 0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glDeleteTextures(1, &textureId);
-    glDisableVertexAttribArray(gAttributeCoordLoc);
+
+    // do NOT disable vertex attribute arrays when using VAOs
 }
 
 /*-----------------------------------------------------------------------------------------------
@@ -741,16 +683,8 @@ bool init(int argc, char *argv[])
     gProgramId = CreateProgram();
     
     // pick out the attributes and uniforms used in the FreeType GPU program
-    char coordName[] = "coord";
-    gAttributeCoordLoc = glGetAttribLocation(gProgramId, coordName);
-    if (gAttributeCoordLoc == -1)
-    {
-        fprintf(stderr, "Could not bind attribute '%s'\n", coordName);
-        glDeleteProgram(gProgramId);
-        return false;
-    }
 
-    char textTextureName[] = "tex";
+    char textTextureName[] = "textureSamplerId";
     gUniformTextTextureLoc = glGetUniformLocation(gProgramId, textTextureName);
     if (gUniformTextTextureLoc == -1)
     {
@@ -759,7 +693,8 @@ bool init(int argc, char *argv[])
         return false;
     }
 
-    char textColorName[] = "color";
+    //char textColorName[] = "color";
+    char textColorName[] = "textureColor";
     gUniformTextColorLoc = glGetUniformLocation(gProgramId, textColorName);
     if (gUniformTextColorLoc == -1)
     {
