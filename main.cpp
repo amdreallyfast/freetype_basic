@@ -66,7 +66,7 @@ GLuint gVbo;
 FT_Library gFtLib;
 FT_Face gFtFace;
 GLuint gProgramId;
-GLint gUniformTextTextureLoc;   // uniform location within program
+GLint gUniformTextSamplerLoc;   // uniform location within program
 GLint gUniformTextColorLoc;     // uniform location within program
 
 /*-----------------------------------------------------------------------------------------------
@@ -238,7 +238,7 @@ void RenderText(const char loadThisChar, const float x, const float y, const flo
 
     // tell the frag shader which texture sampler to use (??I think that there are 15 with 0 enabled by default??)
     glActiveTexture(GL_TEXTURE0);   // ??necessary? texture 0 is active by default, but using another doesn't seem to affect it??
-    glUniform1i(gUniformTextTextureLoc, 0);
+    glUniform1i(gUniformTextSamplerLoc, 0);
 
     //??the heck is this??
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
@@ -685,8 +685,8 @@ bool init(int argc, char *argv[])
     // pick out the attributes and uniforms used in the FreeType GPU program
 
     char textTextureName[] = "textureSamplerId";
-    gUniformTextTextureLoc = glGetUniformLocation(gProgramId, textTextureName);
-    if (gUniformTextTextureLoc == -1)
+    gUniformTextSamplerLoc = glGetUniformLocation(gProgramId, textTextureName);
+    if (gUniformTextSamplerLoc == -1)
     {
         fprintf(stderr, "Could not bind uniform '%s'\n", textTextureName);
         glDeleteProgram(gProgramId);
