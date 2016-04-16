@@ -228,6 +228,8 @@ GLuint CreateProgram()
 void RenderText(const char loadThisChar, const float x, const float y, const float userScaleX,
     const float userScaleY)
 {
+    // the text will be drawn, in part, via a manipulation of pixel alpha values, and apparently
+    // OpenGL's blending does this
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
@@ -259,6 +261,8 @@ void RenderText(const char loadThisChar, const float x, const float y, const flo
     // Note: The function returns an FT_Error...thing (I can't find the definition).  I don't 
     // know what it is, but I do know that returning anything other than 0/false is a problem, so
     // if it doesn't equate to false, we're good.
+    // Also Note: The argument FT_LOAD_RENDER tells FreeType to generate an 8bit greyscale 
+    // bitmap of the character.  http://learnopengl.com/#!In-Practice/Text-Rendering
     if (FT_Load_Char(gFtFace, loadThisChar, FT_LOAD_RENDER))
     {
         // returned an error, so jump to the end of the function and clean up before returning
@@ -278,7 +282,12 @@ void RenderText(const char loadThisChar, const float x, const float y, const flo
         // Note: That is, it should store [alpha, alpha, alpha, etc.].  If GL_RGBA (red, green, 
         // blue, and alpha) were stated instead, then OpenGL would store the data as 
         // [red, green, blue, alpha, red, green, blue, alpha, red, green, blue, alpha, etc.].
-        GLint internalFormat = GL_ALPHA;
+        // Also Note: When writing this program (4-16-2016), GL_ALPHA is a deprecated value to 
+        // provideto glTexImage2D(...)'s format (it used to work, but now it doesn't), and the red
+        // channel is the only one that allows for a single byte
+        // (see https://www.opengl.org/sdk/docs/man/html/glTexImage2D.xhtml), so just shove the 
+        // alpha value into the red's byte.
+        GLint internalFormat = GL_RED;
 
         // tell OpenGL that the data is being provided as alpha values
         // Note: Similar to "internal format", but this is telling OpenGL how the data is being
@@ -287,7 +296,8 @@ void RenderText(const char loadThisChar, const float x, const float y, const flo
         // another while "internal format" remains the same in order to provide consistency 
         // after file loading.  In this case though, "internal format" and "provided format"
         // are the same.
-        GLint providedFormat = GL_ALPHA;
+        // Also Note: GL_ALPHA is deprecated, so make due with the red byte.
+        GLint providedFormat = GL_RED;
 
         // knowing the provided format is great and all, but OpenGL is getting the data in the 
         // form of a void pointer, so it needs to be told if the data is a singed byte, unsigned 
@@ -362,8 +372,8 @@ void RenderText(const char loadThisChar, const float x, const float y, const flo
         // Note: Textures use their own 2D coordinate system (S,T) to avoid confusion with screen coordinates (X,Y).
         float sLeft = 0.0f;
         float sRight = 1.0f;
-        float tBottom = 0.0f;
         float tTop = 1.0f;
+        float tBottom = 0.0f;
 
         // OpenGL draws triangles, but a rectangle needs to be drawn, so specify the four corners
         // of the box in such a way that GL_LINE_STRIP will draw the two triangle halves of the 
@@ -386,6 +396,9 @@ void RenderText(const char loadThisChar, const float x, const float y, const flo
 
         // set up (??not create??) the vertex buffer that will hold screen coordinates and texture 
         // coordinates
+        // Note: Must bind buffer BEFORE setting vertex attributes or they may get set for the 
+        // wrong vertex buffer.  And if that buffer is 0, then glVertexAttribPointer(...) won't 
+        // complain, but glDrawArrays(...) WILL crash.  
         GLuint vboId;
         glGenBuffers(1, &vboId);
         glBindBuffer(GL_ARRAY_BUFFER, vboId);
@@ -424,7 +437,13 @@ void RenderText(const char loadThisChar, const float x, const float y, const flo
             (void *)bufferStartByteOffset);
 
         // all that so that this one function call will work
-        // Note: Start at vertex 0 (that is, start at element 0 in the GL_ARRAY_BUFFER) and draw 4 of them. 
+        // Note: Start at vertex 0 (that is, start at element 0 in the GL_ARRAY_BUFFER) and draw 
+        // 4 of them.
+        // Also Note: Due to the way that fonts work in texture atlases, only one character is 
+        // drawn at a time, which means that only 1 quad is drawn at a time.  Rather than set up 
+        // indexes and perform an element draw, just use a GL_TRIANGLE_STRIP.  That works great 
+        // for a single (and only a single) quad, hence the hard-coded vertex count (4) in the 
+        // draw call.
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
         glDeleteBuffers(1, &vboId);
     }
@@ -464,17 +483,15 @@ void display()
     glClearDepth(1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    // the text will be drawn, in part, via a manipulation of pixel alpha values, and apparently
-    // OpenGL's blending does this
-    //glEnable(GL_BLEND);
-    //glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
     // the shader for this program uses a vec4 (implicit content type is float) for color, so 
     // specify text color as a 4-float array and give it to shader 
     GLfloat color[4] = { 0.5f, 0.5f, 0, 1 };
     glUniform4fv(gUniformTextColorLoc, 1, color);
 
-    // set font size to 48 pixels (??"pixel width" to 0??)
+    // set font size to 48 pixels
+    // Note: Setting the pixel width (middle argument) to 0 lets FreeType determine font width 
+    // based on the provided height.
+    // http://learnopengl.com/#!In-Practice/Text-Rendering
     FT_Set_Pixel_Sizes(gFtFace, 0, 48);
 
     // draw all the stuff that we want to, then swap the buffers
@@ -483,7 +500,7 @@ void display()
     // (??you sure? X = -1, Y = -1 doesn't draw??)
     float X = 0;
     float Y = 0;
-    RenderText('k', X, Y, 1.0f, 1.0f);
+    RenderText('K', X, Y, 1.0f, 1.0f);
     RenderText('k', X, Y, 2.0f, 2.0f);
     RenderText('k', X, Y, 4.0f, 4.0f);
 
@@ -495,10 +512,6 @@ void display()
     glutPostRedisplay();
 
     // clean up bindings
-    // Note: This is just good practice, but in reality the bindings can be left as they were 
-    // and re-bound on each new call to this rendering function.
-    glBindVertexArray(0);
-    glBindTexture(GL_TEXTURE_2D, 0);
     glUseProgram(0);
 }
 
